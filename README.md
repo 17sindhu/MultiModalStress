@@ -1,11 +1,5 @@
 # Samjna – Flask Web UI
 
-Converts the Tkinter desktop UI to a Flask web application.
-**No analysis or calculation logic was modified.**  
-The `utils/questions.py` file is copied verbatim from the original project.
-
----
-
 ## Architecture – Persistent Camera Across Screens
 
 This app uses a **single-page assessment shell** (`/assessment`) to exactly
