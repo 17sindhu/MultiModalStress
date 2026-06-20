@@ -6,6 +6,9 @@
 # =============================================================================
 
 import os, json, random, logging
+from flask import send_file
+import zipfile
+import tempfile
 from datetime import datetime
 from flask import (Flask, render_template, request, redirect,
                    url_for, session, flash, jsonify)
@@ -496,7 +499,25 @@ def admin_session(session_id):
                            sess=dbs, gaze=gaze, events=events, pss=pss)
 
 # =============================================================================
+@app.route('/download-all-data')
+def download_all_data():
+    output_folder = os.path.join(BASE_DIR, "Output")
 
+    temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+    temp_zip.close()
+
+    with zipfile.ZipFile(temp_zip.name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, dirs, files in os.walk(output_folder):
+            for file in files:
+                filepath = os.path.join(root, file)
+                arcname = os.path.relpath(filepath, output_folder)
+                zipf.write(filepath, arcname)
+
+    return send_file(
+        temp_zip.name,
+        as_attachment=True,
+        download_name="samjna_output.zip"
+    )
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
