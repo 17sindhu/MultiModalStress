@@ -162,6 +162,42 @@ Access all data at **`/admin`** (no login required by default).
 
 ---
 
+## Deploy to Render (free tier)
+
+### Option A — One-click Blueprint
+This repo includes `render.yaml`, which defines the whole service (disk,
+build/start commands, env vars) as code.
+
+1. Go to [render.com](https://render.com) → sign in with GitHub
+2. **New** → **Blueprint** → select this repo
+3. Render reads `render.yaml` and provisions everything automatically,
+   including a 1 GB persistent disk mounted at `/data` and a random
+   `SECRET_KEY`
+4. Click **Apply** — first deploy takes a few minutes
+
+### Option B — Manual setup
+1. **New** → **Web Service** → connect this repo
+2. Build command: `pip install -r requirements.txt`
+3. Start command: `gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120`
+4. Instance type: **Free**
+5. Add a **Disk**: mount path `/data`, size 1 GB
+6. Add environment variables:
+   - `SECRET_KEY` — any long random string
+   - `OUTPUT_BASE_DIR` = `/data/Output`
+   - `DATABASE_URL` = `sqlite:////data/samjna.db`
+
+### ffmpeg on Render
+`apt.txt` (containing `ffmpeg`) tells Render's build system to install it as
+a system package — required for MP4/WAV conversion. This is already included
+in the repo, no action needed.
+
+### Render free-tier note
+Free services on Render spin down after 15 minutes of inactivity and take
+~30-60s to wake up on the next request. This doesn't affect saved data (the
+disk persists), just adds a delay on the first request after idling.
+
+---
+
 ## Deploy to Railway
 
 ### ⚠️ Important – Persistent Storage on Railway
