@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Samjna – Assessment</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <header class="app-header">
+    <span class="logo">SAMJNA</span>
+    <span class="sub">Multimodal Stress Assessment</span>
+  </header>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       Persistent camera preview. Mounted ONCE for the entire assessment.
+       getUserMedia() is called exactly once (in Face Calibration step) and
+       the resulting MediaStream object lives in this page's JS scope for
+       every subsequent step — it is NEVER re-acquired, matching the
+       Tkinter CameraManager singleton which opens cv2.VideoCapture(0) once
+       and keeps it alive until the whole session ends.
+       ════════════════════════════════════════════════════════════════════ -->
+  <div id="global-camera-bar" style="display:none; text-align:center; padding:10px 0; background:rgba(0,0,0,.35);">
+    <video id="global-cam-preview" autoplay muted playsinline
+           style="width:160px; height:120px; border-radius:6px; border:2px solid #1C5070; background:#000;">
+    </video>
+    <div id="global-cam-status" style="color:#8FA8C8; font-size:.8rem; margin-top:4px;">Camera initializing…</div>
+  </div>
+
+  <main id="step-container">
+    <div style="text-align:center; padding:60px; color:#8FA8C8;">Loading…</div>
+  </main>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/assessment_shell.js') }}"></script>
+  <script>
+    window.SAMJNA_FIRST_STEP_URL = "{{ first_step_url }}";
+  </script>
+</body>
+</html>

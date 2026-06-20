@@ -1,0 +1,35 @@
+<div class="card complete-card">
+  <h1 class="page-title">{{ labels.session_complete }}</h1>
+  <p style="color:var(--text-dim); margin: 12px 0;">
+    {{ labels.thank_you | replace('\n', '<br>') | safe }}
+  </p>
+
+  <div class="big-score">{{ pss_score }}</div>
+  <div class="interp">{{ interpretation }}</div>
+
+  <p style="color:#445566; font-size:.85rem; margin-bottom:32px; word-break:break-all;">
+    Participant: {{ participant }}<br>
+    All recordings, calibration data, and PSS results have been saved to:<br>
+    <code style="color:var(--text-dim);">{{ output_dir }}</code>
+  </p>
+
+  <a href="{{ url_for('consent') }}" class="btn btn-primary">
+    Start New Session
+  </a>
+</div>
+
+<script>
+(function () {
+  // Release the shared camera/mic so no other process is locked out —
+  // matches CameraManager.get().release() at the end of the Tkinter session.
+  const stream = window.Samjna.getStream();
+  if (stream) {
+    stream.getTracks().forEach(t => {
+      t.stop();
+      window.Samjna.log(`Released media track at session end: ${t.kind}`);
+    });
+  }
+  const camBar = document.getElementById("global-camera-bar");
+  if (camBar) camBar.style.display = "none";
+})();
+</script>

@@ -1,0 +1,404 @@
+/* ============================================================
+   Samjna – main.css  (dark navy theme matching Tkinter UI)
+   ============================================================ */
+
+:root {
+  --bg-deep:    #0D1B2A;
+  --bg-card:    #122136;
+  --bg-input:   #1C2E45;
+  --gold:       #C8A951;
+  --gold-hover: #E0C060;
+  --blue-light: #8FA8C8;
+  --text-bright:#DDEEFF;
+  --text-dim:   #AACCEE;
+  --green:      #50DDAA;
+  --red:        #FF4444;
+  --warn:       #FFDD44;
+  --border:     #1C5070;
+  --font-ui:    'Segoe UI', 'Noto Sans', 'Nirmala UI', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg-deep);
+  color: var(--text-bright);
+  font-family: var(--font-ui);
+  min-height: 100vh;
+}
+
+/* ── Header ── */
+.app-header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 14px 40px;
+  background: rgba(0,0,0,.35);
+  border-bottom: 1px solid #1a3050;
+}
+.logo { font-size: 1.5rem; font-weight: 700; color: var(--gold); letter-spacing: 3px; }
+.sub  { font-size: .9rem; color: var(--blue-light); }
+
+/* ── Flash messages ── */
+.flash {
+  padding: 10px 40px;
+  font-size: .95rem;
+}
+.flash-error   { background: #3d0a0a; color: #ffaaaa; }
+.flash-success { background: #0a3d20; color: #aaffcc; }
+
+/* ── Main container ── */
+main { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+
+/* ── Cards / sections ── */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px 28px;
+  margin-bottom: 24px;
+}
+.card-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--gold);
+  margin-bottom: 14px;
+  border-bottom: 1px solid #1a3050;
+  padding-bottom: 8px;
+}
+
+/* ── Page heading ── */
+.page-title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--gold);
+  text-align: center;
+  margin-bottom: 8px;
+}
+.page-subtitle {
+  color: var(--blue-light);
+  text-align: center;
+  margin-bottom: 32px;
+  font-size: .95rem;
+}
+
+/* ── Form elements ── */
+label {
+  display: block;
+  color: var(--text-dim);
+  font-size: .9rem;
+  margin-bottom: 6px;
+}
+input[type="text"],
+input[type="email"],
+select,
+textarea {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid #2a4060;
+  border-radius: 5px;
+  color: #fff;
+  font-size: 1rem;
+  padding: 10px 14px;
+  outline: none;
+  transition: border-color .2s;
+}
+input[type="text"]:focus,
+select:focus,
+textarea:focus { border-color: var(--gold); }
+
+.form-group { margin-bottom: 20px; }
+
+/* Radio group for language */
+.radio-group { display: flex; gap: 10px; flex-wrap: wrap; }
+.radio-btn {
+  position: relative;
+  cursor: pointer;
+  display: inline-block;
+}
+.radio-btn input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+.radio-btn span {
+  display: inline-block;
+  padding: 8px 20px;
+  border-radius: 5px;
+  background: var(--bg-input);
+  color: var(--text-dim);
+  font-size: .95rem;
+  border: 2px solid transparent;
+  transition: all .2s;
+  pointer-events: none;
+}
+.radio-btn input:checked + span {
+  background: var(--gold);
+  color: var(--bg-deep);
+  font-weight: 700;
+  border-color: var(--gold);
+}
+.radio-btn:hover span { border-color: var(--gold); }
+
+/* Checkbox */
+.check-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+  color: var(--text-bright);
+  font-size: .95rem;
+}
+.check-label input[type="checkbox"] {
+  width: 20px; height: 20px;
+  flex-shrink: 0;
+  accent-color: var(--gold);
+  cursor: pointer;
+  margin-top: 2px;
+}
+
+/* ── Buttons ── */
+.btn {
+  display: inline-block;
+  padding: 12px 32px;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background .2s, opacity .2s;
+}
+.btn-primary {
+  background: var(--gold);
+  color: var(--bg-deep);
+}
+.btn-primary:hover  { background: var(--gold-hover); }
+.btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+.btn-danger {
+  background: #7B2020;
+  color: #fff;
+}
+.btn-danger:hover { background: #B03030; }
+.btn-sm { padding: 8px 20px; font-size: .9rem; }
+
+/* Center a button */
+.btn-row { display: flex; justify-content: center; gap: 16px; margin-top: 24px; }
+
+/* ── Consent text box ── */
+.consent-text {
+  background: var(--bg-deep);
+  border: 1px solid #1a3050;
+  border-radius: 5px;
+  padding: 16px;
+  font-size: .9rem;
+  color: var(--text-dim);
+  line-height: 1.6;
+  max-height: 160px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+/* ── Interview screen ── */
+.phase-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px;
+  background: rgba(0,0,0,.4);
+  border-bottom: 1px solid #1a3050;
+  margin: -40px -20px 30px;
+}
+.phase-name  { color: var(--gold); font-weight: 700; font-size: 1rem; }
+.timer-display {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--red);
+  font-family: 'Courier New', monospace;
+  min-width: 80px;
+  text-align: right;
+}
+
+.question-box {
+  border-radius: 8px;
+  padding: 24px 28px;
+  margin-bottom: 24px;
+  font-size: 1.1rem;
+  line-height: 1.7;
+  text-align: center;
+}
+
+.prep-banner {
+  text-align: center;
+  color: var(--warn);
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 16px;
+  min-height: 28px;
+}
+
+.status-banner {
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 600;
+  min-height: 28px;
+  margin-bottom: 12px;
+}
+.status-recording { color: #FF6666; }
+.status-reading   { color: var(--text-dim); }
+.status-pause     { color: var(--warn); }
+
+.dot-progress {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+.dot-progress span {
+  font-size: 1.4rem;
+}
+.dot-done    { color: #336633; }
+.dot-current { color: var(--gold); }
+.dot-future  { color: #334455; }
+
+/* ── Eye calibration canvas ── */
+#gaze-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #0A1520;
+  cursor: crosshair;
+}
+.gaze-fullscreen-wrap {
+  /* Break out of the centered `main` container's max-width so the
+     calibration canvas spans the full browser window, matching the
+     original Tkinter canvas.pack(fill="both", expand=True) in a
+     maximized window. */
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: #0A1520;
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+}
+.gaze-fullscreen-wrap .page-title,
+.gaze-fullscreen-wrap .page-subtitle {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 18px 20px 4px;
+}
+.gaze-fullscreen-wrap .gaze-canvas-area {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 10px 24px;
+}
+.gaze-fullscreen-wrap .gaze-progress {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 8px 0 20px;
+}
+.gaze-progress {
+  text-align: center;
+  color: var(--blue-light);
+  margin-top: 12px;
+  font-size: .95rem;
+}
+
+/* ── PSS questions ── */
+.pss-question {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+.pss-q-text {
+  font-size: .95rem;
+  color: var(--text-bright);
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+.pss-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pss-opt {
+  position: relative;
+  cursor: pointer;
+  display: inline-block;
+}
+.pss-opt input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+.pss-opt span {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text-dim);
+  font-size: .85rem;
+  border: 2px solid transparent;
+  transition: all .15s;
+  pointer-events: none;
+}
+.pss-opt input:checked + span {
+  background: var(--gold);
+  color: var(--bg-deep);
+  font-weight: 700;
+}
+.pss-opt:hover span { border-color: var(--gold); }
+
+/* ── Thank-you / complete screen ── */
+.complete-card {
+  text-align: center;
+  padding: 60px 40px;
+}
+.complete-card .big-score {
+  font-size: 5rem;
+  font-weight: 800;
+  color: var(--green);
+  line-height: 1;
+  margin: 16px 0;
+}
+.complete-card .interp {
+  font-size: 1.1rem;
+  color: var(--text-dim);
+  margin-bottom: 24px;
+}
+
+/* ── Admin table ── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .9rem;
+}
+th, td {
+  padding: 10px 14px;
+  border: 1px solid #1a3050;
+  text-align: left;
+}
+th { background: var(--bg-card); color: var(--gold); }
+tr:nth-child(even) { background: rgba(255,255,255,.02); }
+tr:hover { background: rgba(200,169,81,.06); }
+a { color: var(--gold); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  main { padding: 20px 12px; }
+  .page-title { font-size: 1.5rem; }
+  .pss-options { flex-direction: column; }
+}

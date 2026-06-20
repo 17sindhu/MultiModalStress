@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Admin – Samjna{% endblock %}
+
+{% block content %}
+<h1 class="page-title" style="margin-bottom:24px;">Admin Dashboard</h1>
+
+<div class="card">
+  <div class="card-title">All Sessions ({{ sessions | length }})</div>
+  {% if sessions %}
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Participant</th>
+        <th>Language</th>
+        <th>Date / Time</th>
+        <th>PSS Score</th>
+        <th>Details</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sessions %}
+      <tr>
+        <td>{{ s.id }}</td>
+        <td>{{ s.participant_name }}</td>
+        <td>{{ s.language }}</td>
+        <td>{{ s.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td>
+          {% if s.pss_result %}
+            <strong style="color:var(--green)">{{ s.pss_result.score }}</strong>
+            <span style="color:var(--text-dim); font-size:.8rem;"> / 40</span>
+          {% else %}
+            <span style="color:#445566">—</span>
+          {% endif %}
+        </td>
+        <td><a href="{{ url_for('admin_session', session_id=s.id) }}">View →</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:var(--text-dim)">No sessions recorded yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

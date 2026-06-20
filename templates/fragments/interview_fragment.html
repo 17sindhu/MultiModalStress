@@ -1,0 +1,376 @@
+<style>
+  #step-container { background: {{ colors.bg }}; }
+  .interview-question-box {
+    background: {{ colors.bg }};
+    color: {{ colors.fg }};
+    border: 2px solid {{ colors.border }};
+  }
+</style>
+
+<div class="phase-banner" style="background:#050505; border-bottom:1px solid #111;">
+  <span class="phase-name">{{ phase_label }}</span>
+  <span class="timer-display" id="timer">--:--</span>
+</div>
+
+<div class="dot-progress">
+  {% for i in range(total_qs) %}
+    <span class="{% if i < q_idx %}dot-done{% elif i == q_idx %}dot-current{% else %}dot-future{% endif %}">●</span>
+  {% endfor %}
+</div>
+
+<div class="status-banner" id="status-lbl">{{ labels.reading }}</div>
+
+<div style="text-align:center; margin-bottom:14px;">
+  <img src="{{ url_for('static', filename='img/avatar.svg') }}" alt="Assessment avatar"
+       style="width:200px; height:250px; display:block; margin:0 auto; border-radius:8px;">
+  <div id="interview-cam-warning" style="display:none; color:var(--warn); font-size:.85rem; margin-top:6px;">
+    ⚠ Camera/mic not available – answer will not be recorded.
+  </div>
+  <video id="interview-cam-preview" autoplay muted playsinline style="display:none;"></video>
+</div>
+
+<div class="interview-question-box" style="border-radius:8px; padding:28px 32px;
+     margin-bottom:20px; font-size:1.1rem; line-height:1.75; text-align:center;">
+  <strong style="color:var(--gold); display:block; margin-bottom:10px; font-size:.85rem;">
+    Q{{ q_idx+1 }} of {{ total_qs }} &nbsp;·&nbsp; Global Q{{ global_q_no }}
+  </strong>
+  {{ q_text }}
+</div>
+
+<div class="btn-row">
+  <button id="restart-btn" class="btn btn-danger btn-sm"
+          onclick="window.__interviewStep && window.__interviewStep.restart()" disabled>{{ labels.restart }}</button>
+  <button id="next-btn" class="btn btn-primary btn-sm"
+          onclick="window.__interviewStep && window.__interviewStep.next()">{{ labels.next_q }}</button>
+</div>
+
+<script>
+(function () {
+  const PHASE_ID      = "{{ phase_id }}";
+  const IS_COGNITIVE  = {{ 'true' if is_cognitive else 'false' }};
+  const Q_IDX         = {{ q_idx }};
+  const Q_SECS        = {{ q_secs }};
+  const PREP_SECS     = {{ prep_secs }};
+  const Q_TEXT        = {{ q_text | tojson }};
+  const LANG          = "{{ lang }}";
+  const NEXT_STEP_URL = "{{ next_step_url }}";
+  const LOG_URL       = "{{ log_url }}";
+  const UPLOAD_VIDEO  = "{{ upload_video_url }}";
+  const UPLOAD_AUDIO  = "{{ upload_audio_url }}";
+
+  const LBL_READING    = {{ labels.reading | tojson }};
+  const LBL_RECORDING  = {{ labels.recording | tojson }};
+  const LBL_PREPARE    = {{ labels[prep_key] | tojson }};
+  const LBL_PAUSE_WARN = {{ labels.pause_warning | tojson }};
+
+  const PAUSE_THRESHOLD_MS = 3000;
+
+  let vidRecorder, audRecorder;
+  let vidChunks = [], audChunks = [];
+  let timerHandle = null, prepHandle = null, pauseInterval = null;
+  let secsLeft = Q_SECS, prepLeft = PREP_SECS;
+  let state = "idle";
+  let lastSoundTime = Date.now();
+  let pauseFlagged = false;
+  let audioCtx, analyser, micSource;
+  let nextAdvancing = false;
+
+  async function logEvent(event, detail="") {
+    try {
+      await window.Samjna.postJSON(LOG_URL, { event, detail });
+    } catch(e) { window.Samjna.warn("log failed", e); }
+  }
+
+  function setStatus(text, cls="") {
+    const el = document.getElementById("status-lbl");
+    if (!el) return;
+    el.textContent = text;
+    el.className = "status-banner " + cls;
+  }
+  function setTimerText(text, color) {
+    const el = document.getElementById("timer");
+    if (!el) return;
+    el.textContent = text;
+    if (color) el.style.color = color;
+  }
+  function fmt(s) {
+    s = Math.max(0, s);
+    return `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
+  }
+
+  // ── Reuse the SAME persistent stream — never call getUserMedia here ──────
+  function attachCameraPreview() {
+    const stream = window.Samjna.getStream();
+    const previewEl = document.getElementById("interview-cam-preview");
+    if (stream && previewEl) {
+      previewEl.srcObject = stream;
+      document.getElementById("interview-cam-warning").style.display = "none";
+      window.Samjna.log(`Q${Q_IDX+1} (${PHASE_ID}): reusing existing camera stream — not reinitializing.`);
+      setupPauseDetection(stream);
+    } else {
+      document.getElementById("interview-cam-warning").style.display = "block";
+      window.Samjna.warn(`Q${Q_IDX+1} (${PHASE_ID}): no camera stream available — recording will be skipped.`);
+    }
+  }
+
+  function setupPauseDetection(stream) {
+    if (!IS_COGNITIVE || !stream) return;
+    try {
+      audioCtx  = new (window.AudioContext || window.webkitAudioContext)();
+      analyser  = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      micSource = audioCtx.createMediaStreamSource(stream);
+      micSource.connect(analyser);
+      lastSoundTime = Date.now();
+
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      pauseInterval = setInterval(() => {
+        if (state !== "recording") return;
+        analyser.getByteTimeDomainData(data);
+        let sumSq = 0;
+        for (let i=0;i<data.length;i++){ const v=(data[i]-128)/128; sumSq+=v*v; }
+        const rms = Math.sqrt(sumSq/data.length);
+        if (rms > 0.02) {
+          lastSoundTime = Date.now();
+          if (pauseFlagged) { pauseFlagged = false; setStatus(LBL_RECORDING, "status-recording"); }
+        } else if (Date.now() - lastSoundTime >= PAUSE_THRESHOLD_MS && !pauseFlagged) {
+          pauseFlagged = true;
+          setStatus(LBL_PAUSE_WARN, "status-pause");
+          logEvent(`Q${Q_IDX+1}_LONG_PAUSE_DETECTED`);
+        }
+      }, 500);
+    } catch(e) { window.Samjna.warn("pause detection setup failed:", e); }
+  }
+
+  function speak(text, onDone) {
+    let fired = false;
+    function finish() { if (fired) return; fired = true; onDone(); }
+    if (!("speechSynthesis" in window)) { setTimeout(finish, 1200); return; }
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      const langMap = {english:"en-IN", tamil:"ta-IN", kannada:"kn-IN"};
+      u.lang = langMap[LANG] || "en-IN";
+      u.rate = 0.95;
+      u.onend = finish; u.onerror = finish;
+      window.speechSynthesis.speak(u);
+
+      // Safety net: ONLY for genuine browser failures (no voices installed,
+      // speechSynthesis silently refusing to fire onend/onerror at all).
+      // Must NOT race against real speech — that was cutting questions off
+      // mid-sentence. Use a generous estimate (~110ms/char, i.e. ~110 wpm,
+      // well below normal speaking pace) and re-check actual speaking state
+      // before giving up, extending the wait if speech is still in progress.
+      const estMs = Math.max(4000, text.length * 110);
+      function watchdog(remaining) {
+        setTimeout(() => {
+          if (fired) return;
+          if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+            // Still genuinely speaking — extend the wait instead of cutting it off.
+            watchdog(2000);
+            return;
+          }
+          window.Samjna.warn("TTS watchdog: onend/onerror never fired and speech " +
+                             "synthesis is idle — assuming failure and continuing.");
+          finish();
+        }, remaining);
+      }
+      watchdog(estMs);
+    } catch(e) { window.Samjna.warn("speech synthesis failed:", e); setTimeout(finish, 1500); }
+  }
+
+  function startRecording() {
+    state = "recording";
+    pauseFlagged = false;
+    lastSoundTime = Date.now();
+
+    // Defensive safety measure: explicitly silence any avatar speech that
+    // might still be queued or trailing off, so there is zero chance of the
+    // avatar's own voice being picked up by the microphone right as
+    // recording begins. (speechSynthesis output and the mic's audio track
+    // are completely separate data paths — MediaRecorder only ever reads
+    // from stream.getAudioTracks(), never from speechSynthesis — so this is
+    // belt-and-braces against any acoustic bleed-through via speakers.)
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+
+    const restartBtn = document.getElementById("restart-btn");
+    if (restartBtn) restartBtn.disabled = false;
+    setStatus(LBL_RECORDING, "status-recording");
+    logEvent(`Q${Q_IDX+1}_RECORDING_START`, Q_TEXT.slice(0,80));
+    window.Samjna.log(`Recording starting for Q${Q_IDX+1} (${PHASE_ID}) — video and audio captured as SEPARATE streams (video has no audio track, matching the original two-thread recorder). Avatar speech synthesis explicitly cancelled.`);
+
+    vidChunks = []; audChunks = [];
+    const stream = window.Samjna.getStream();
+
+    if (stream) {
+      // ── Video track only — the resulting MP4 will have NO audio track,
+      //    exactly like the original's cv2.VideoWriter (video-only AVI →
+      //    ffmpeg → MP4, with nothing for "-c:a aac" to carry over).
+      try {
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+          const vOnlyStream = new MediaStream([videoTrack]);
+          const vMime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+                       ? "video/webm;codecs=vp9"
+                       : (MediaRecorder.isTypeSupported("video/webm;codecs=vp8") ? "video/webm;codecs=vp8" : "video/webm");
+          vidRecorder = new MediaRecorder(vOnlyStream, {mimeType:vMime});
+          vidRecorder.ondataavailable = e => { if(e.data.size>0) vidChunks.push(e.data); };
+          vidRecorder.start(1000);
+          window.Samjna.log(`Video-only MediaRecorder started (${vMime}, no audio track)`);
+        } else {
+          window.Samjna.warn(`No video track available for Q${Q_IDX+1}.`);
+        }
+      } catch(e) { window.Samjna.warn("video recorder failed", e); vidRecorder=null; }
+
+      // ── Audio track only — this is the sole carrier of voice, saved as .wav
+      try {
+        const audioTrack = stream.getAudioTracks()[0];
+        if (audioTrack) {
+          const aOnlyStream = new MediaStream([audioTrack]);
+          const aMime = MediaRecorder.isTypeSupported("audio/wav") ? "audio/wav"
+                       : (MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm");
+          audRecorder = new MediaRecorder(aOnlyStream, {mimeType:aMime});
+          audRecorder.ondataavailable = e => { if(e.data.size>0) audChunks.push(e.data); };
+          audRecorder.start(1000);
+          window.Samjna.log(`Audio-only MediaRecorder started (${aMime})`);
+        } else {
+          window.Samjna.warn(`No audio track available for Q${Q_IDX+1}.`);
+        }
+      } catch(e) { window.Samjna.warn("audio recorder failed", e); audRecorder=null; }
+    } else {
+      window.Samjna.warn(`No stream available — Q${Q_IDX+1} will not be recorded.`);
+    }
+
+    secsLeft = Q_SECS;
+    tickResponse();
+  }
+
+  function stopRecording(callback) {
+    if (state !== "recording") { callback(); return; }
+    state = "idle";
+    const restartBtn = document.getElementById("restart-btn");
+    if (restartBtn) restartBtn.disabled = true;
+
+    let pending = 0;
+    function done() { pending--; if (pending<=0) callback(); }
+
+    if (vidRecorder && vidRecorder.state !== "inactive") {
+      pending++;
+      vidRecorder.onstop = async () => {
+        window.Samjna.log(`Video MediaRecorder stopped for Q${Q_IDX+1}: ${vidChunks.length} chunks`);
+        if (vidChunks.length) await uploadBlob(UPLOAD_VIDEO, new Blob(vidChunks,{type:vidRecorder.mimeType}), "video");
+        done();
+      };
+      vidRecorder.stop();
+    }
+    if (audRecorder && audRecorder.state !== "inactive") {
+      pending++;
+      audRecorder.onstop = async () => {
+        window.Samjna.log(`Audio MediaRecorder stopped for Q${Q_IDX+1}: ${audChunks.length} chunks`);
+        if (audChunks.length) await uploadBlob(UPLOAD_AUDIO, new Blob(audChunks,{type:audRecorder.mimeType}), "audio");
+        done();
+      };
+      audRecorder.stop();
+    }
+    if (pending === 0) callback();
+  }
+
+  async function uploadBlob(url, blob, kind) {
+    try {
+      window.Samjna.log(`Uploading ${kind} for Q${Q_IDX+1}: ${blob.size} bytes → ${url}`);
+      const resp = await fetch(url, {method:"POST", headers:{"Content-Type": blob.type||"application/octet-stream"}, body: blob});
+      const data = await resp.json();
+      if (data.status === "ok") {
+        window.Samjna.log(`${kind} upload SUCCESS for Q${Q_IDX+1}: ${data.file}`);
+      } else {
+        window.Samjna.warn(`${kind} upload FAILED for Q${Q_IDX+1}:`, data);
+      }
+    } catch(e) { window.Samjna.warn(`${kind} upload exception for Q${Q_IDX+1}:`, e); }
+  }
+
+  function tickResponse() {
+    setTimerText(fmt(secsLeft), "#FF4444");
+    if (secsLeft <= 0) { nextQuestion(); return; }
+    secsLeft--;
+    timerHandle = setTimeout(tickResponse, 1000);
+  }
+
+  function tickPrep() {
+    if (prepLeft > 0) {
+      setStatus(`⏳ ${LBL_PREPARE} ${prepLeft}s`, "status-pause");
+      setTimerText(String(prepLeft).padStart(2,"0"), "#FFDD44");
+      prepLeft--;
+      prepHandle = setTimeout(tickPrep, 1000);
+    } else {
+      startRecording();
+    }
+  }
+
+  function restartQuestion() {
+    clearTimeout(timerHandle); clearTimeout(prepHandle);
+    window.speechSynthesis && window.speechSynthesis.cancel();
+    stopRecording(() => {
+      logEvent(`Q${Q_IDX+1}_RESTARTED`);
+      setStatus("", "");
+      runQuestionFlow();
+    });
+  }
+
+  function nextQuestion() {
+    if (nextAdvancing) return;
+    nextAdvancing = true;
+    clearTimeout(timerHandle); clearTimeout(prepHandle);
+    if (pauseInterval) clearInterval(pauseInterval);
+    window.speechSynthesis && window.speechSynthesis.cancel();
+    const nextBtn = document.getElementById("next-btn");
+    if (nextBtn) nextBtn.disabled = true;
+    stopRecording(async () => {
+      await logEvent(`Q${Q_IDX+1}_END`);
+      await window.Samjna.goTo(NEXT_STEP_URL);
+    });
+  }
+
+  function keyHandler(e) { if (e.key==="Enter") nextQuestion(); }
+  document.addEventListener("keydown", keyHandler);
+
+  function runQuestionFlow() {
+    state = "tts";
+    setStatus(LBL_READING, "status-reading");
+    setTimerText("--:--", "#8FA8C8");
+    speak(Q_TEXT, () => {
+      if (state !== "tts") return;
+      if (PREP_SECS > 0) {
+        state = "prep";
+        prepLeft = PREP_SECS;
+        // Announce the prep time aloud, exactly as the original avatar does:
+        // "You have N seconds to prepare. Recording starts after the countdown."
+        const prepMsgEn = `You have ${PREP_SECS} seconds to prepare. Recording starts after the countdown.`;
+        const prepMsgLocal = `${LBL_PREPARE} ${PREP_SECS}${LANG === "english" ? " seconds" : ""}.`;
+        const prepMsg = LANG === "english" ? prepMsgEn : prepMsgLocal;
+        window.Samjna.log(`Avatar announcing prep time: "${prepMsg}"`);
+        speak(prepMsg, () => { /* countdown already runs in parallel below */ });
+        tickPrep();
+      } else {
+        startRecording();
+      }
+    });
+  }
+
+  // Expose controls for the buttons in this fragment
+  window.__interviewStep = { restart: restartQuestion, next: nextQuestion };
+
+  // ── Boot this step ─────────────────────────────────────────────────────
+  attachCameraPreview();
+  runQuestionFlow();
+
+  // Clean up the global keydown listener when this fragment is replaced
+  const observer = new MutationObserver(() => {
+    if (!document.body.contains(document.getElementById("status-lbl"))) {
+      document.removeEventListener("keydown", keyHandler);
+      if (pauseInterval) clearInterval(pauseInterval);
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.getElementById("step-container"), {childList:true, subtree:true});
+})();
+</script>

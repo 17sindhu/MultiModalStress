@@ -1,0 +1,86 @@
+<h1 class="page-title">Step 1 – Face Positioning</h1>
+<p class="page-subtitle">
+  Please position your face inside the guide box, then click Continue.
+</p>
+
+<div class="card" style="text-align:center; padding: 32px;">
+  <video id="face-cal-preview" autoplay muted playsinline
+         style="width:480px; max-width:100%; height:360px; border-radius:8px;
+                border:2px solid #1C5070; background:#111; display:block; margin:0 auto;">
+  </video>
+
+  <p id="face-cal-status" style="color:var(--text-dim); font-size:1.05rem; margin:16px 0 8px;">
+    Waiting for camera…
+  </p>
+
+  <p id="face-cal-error" style="display:none; color:#FF6666; font-size:.9rem; margin-bottom:12px;"></p>
+
+  <ul style="color:var(--text-bright); text-align:left; display:inline-block;
+             line-height:1.9; font-size:.9rem; margin: 16px 0 28px;">
+    <li>Sit 50–70 cm away from your screen</li>
+    <li>Make sure your face is well-lit and clearly visible</li>
+    <li>Look directly at the centre of the screen</li>
+    <li>Keep your head still during the assessment</li>
+  </ul>
+
+  <div>
+    <button id="face-cal-allow-btn" class="btn btn-primary" onclick="faceCalRequestMedia()">
+      🎥 Allow Camera &amp; Microphone
+    </button>
+    <button id="face-cal-continue-btn" class="btn btn-primary" style="display:none;"
+            onclick="faceCalContinue()">
+      Continue →
+    </button>
+  </div>
+</div>
+
+<script>
+(function () {
+  async function requestMedia() {
+    const status   = document.getElementById("face-cal-status");
+    const errorEl  = document.getElementById("face-cal-error");
+    const allowBtn = document.getElementById("face-cal-allow-btn");
+    const contBtn  = document.getElementById("face-cal-continue-btn");
+
+    status.textContent = "Requesting camera access…";
+    errorEl.style.display = "none";
+
+    const stream = await window.Samjna.acquireMediaOnce();
+    if (stream) {
+      document.getElementById("face-cal-preview").srcObject = stream;
+      status.textContent = "✓ Camera connected — you may proceed.";
+      status.style.color = "#50DD90";
+      allowBtn.style.display = "none";
+      contBtn.style.display = "inline-block";
+    } else {
+      status.textContent = "⚠ Camera not available.";
+      status.style.color = "#E0A040";
+      errorEl.textContent = "Camera/microphone access was denied or is unavailable. " +
+                            "You can retry, or continue without recording (responses will not be saved as video/audio).";
+      errorEl.style.display = "block";
+      contBtn.style.display = "inline-block";
+      contBtn.textContent = "Continue without recording →";
+    }
+  }
+
+  async function continueStep() {
+    const data = await window.Samjna.postJSON("{{ url_for('face_calibration') }}", {});
+    if (data.next_url) {
+      await window.Samjna.goTo(data.next_url);
+    }
+  }
+
+  window.faceCalRequestMedia = requestMedia;
+  window.faceCalContinue     = continueStep;
+
+  // If a stream already exists (e.g. user navigated back to this step),
+  // don't re-prompt — just show it as already connected.
+  if (window.Samjna.getStream()) {
+    document.getElementById("face-cal-preview").srcObject = window.Samjna.getStream();
+    document.getElementById("face-cal-status").textContent = "✓ Camera connected — you may proceed.";
+    document.getElementById("face-cal-status").style.color = "#50DD90";
+    document.getElementById("face-cal-allow-btn").style.display = "none";
+    document.getElementById("face-cal-continue-btn").style.display = "inline-block";
+  }
+})();
+</script>

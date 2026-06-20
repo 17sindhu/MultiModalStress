@@ -1,0 +1,204 @@
+<div class="gaze-fullscreen-wrap">
+  <h1 class="page-title">Step 2 – Eye Calibration</h1>
+  <p class="page-subtitle">Click the highlighted gold dot. Keep your head still and look directly at each dot.</p>
+
+  <div class="gaze-canvas-area">
+    <canvas id="gaze-canvas"></canvas>
+  </div>
+  <div class="gaze-progress" id="gaze-progress">Dot 1 / 9</div>
+  <div class="btn-row" style="padding-bottom:24px;">
+    <button id="gaze-continue-btn" class="btn btn-primary" style="display:none;"
+            onclick="window.__gazeStep && window.__gazeStep.continueNext()">
+      Continue →
+    </button>
+  </div>
+</div>
+
+<script>
+(function () {
+  // Camera stream is already running from Face Calibration — we do NOT
+  // call getUserMedia() again here. We just confirm it's healthy.
+  if (window.Samjna.getStream()) {
+    window.Samjna.log("Eye calibration: reusing existing camera stream (no re-init).");
+  } else {
+    window.Samjna.warn("Eye calibration: no camera stream available (face calibration was skipped or denied).");
+  }
+
+  // This screen takes over the full browser window (matching the original
+  // Tkinter canvas.pack(fill="both", expand=True) in a maximized window),
+  // so hide the persistent header camera bar while here and restore it
+  // when navigating away.
+  const camBar = document.getElementById("global-camera-bar");
+  const prevCamBarDisplay = camBar ? camBar.style.display : null;
+  if (camBar) camBar.style.display = "none";
+
+  const observer = new MutationObserver(() => {
+    if (!document.body.contains(document.getElementById("gaze-canvas"))) {
+      if (camBar) camBar.style.display = prevCamBarDisplay || "block";
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.getElementById("step-container"), {childList:true, subtree:true});
+
+  const SAVE_URL = "{{ url_for('eye_calibration_save') }}";
+
+  // Format as YYYY-MM-DDTHH:MM:SS using the browser's LOCAL clock — matches
+  // the original's time.strftime("%Y-%m-%dT%H:%M:%S"), which uses the
+  // machine's local system time, not UTC. Date.toISOString() is always UTC
+  // and was producing timestamps offset by the local timezone, which is
+  // why they looked wrong.
+  function formatLocalTimestamp(d) {
+    const pad = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}` +
+          `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  const DOT_POSITIONS_NORM = [
+    [0.15,0.15],[0.50,0.15],[0.85,0.15],
+    [0.15,0.50],[0.50,0.50],[0.85,0.50],
+    [0.15,0.85],[0.50,0.85],[0.85,0.85]
+  ];
+  const DOT_R      = 20;
+  const COL_FUTURE = '#C8A951';
+  const COL_ACTIVE = '#50DDAA';
+  const COL_DONE   = '#2A6040';
+
+  const canvas   = document.getElementById('gaze-canvas');
+  const ctx      = canvas.getContext('2d');
+  let current    = 0;
+  const records  = [];
+  let pulse = 0;
+  let pulseTimer = null;
+
+  function resize() {
+    canvas.width  = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+    draw();
+  }
+
+  function dot(i) {
+    const [nx,ny] = DOT_POSITIONS_NORM[i];
+    return { x: nx * canvas.width, y: ny * canvas.height };
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < 9; i++) {
+      const { x, y } = dot(i);
+      let col;
+      if      (i < current)  col = COL_DONE;
+      else if (i === current) col = COL_ACTIVE;
+      else                    col = COL_FUTURE;
+
+      ctx.beginPath();
+      ctx.arc(x, y, DOT_R, 0, Math.PI*2);
+      ctx.fillStyle = col;
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      if (i >= current) {
+        ctx.fillStyle = '#0A1520';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(i+1, x, y);
+      }
+    }
+  }
+
+  pulseTimer = setInterval(() => {
+    if (current >= 9) return;
+    const { x, y } = dot(current);
+    draw();
+    pulse = (pulse + 1) % 30;
+    const extra = Math.sin(pulse * Math.PI / 15) * 6;
+    ctx.beginPath();
+    ctx.arc(x, y, DOT_R + extra, 0, Math.PI*2);
+    ctx.strokeStyle = COL_ACTIVE;
+    ctx.lineWidth   = 2;
+    ctx.globalAlpha = 0.4;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }, 50);
+
+  function onClick(e) {
+    if (current >= 9) return;
+    const rect   = canvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    const { x, y } = dot(current);
+    const dist = Math.hypot(clickX - x, clickY - y);
+    if (dist > DOT_R * 3) return;
+
+    records.push({
+      dot_index:   current + 1,
+      target_x_px: Math.round(x * 10) / 10,
+      target_y_px: Math.round(y * 10) / 10,
+      click_x_px:  Math.round(clickX),
+      click_y_px:  Math.round(clickY),
+      offset_px:   Math.round(dist * 10) / 10,
+      timestamp:   formatLocalTimestamp(new Date()),
+    });
+
+    current++;
+    if (current < 9) {
+      document.getElementById('gaze-progress').textContent = `Dot ${current+1} / 9`;
+      draw();
+    } else {
+      document.getElementById('gaze-progress').textContent = 'Calibration complete! ✓';
+      draw();
+      clearInterval(pulseTimer);
+      saveAndShowContinue();
+    }
+  }
+
+  canvas.addEventListener('click', onClick);
+
+  let savedOk = false;
+
+  async function saveAndShowContinue() {
+    // Save the calibration data immediately so it's never lost, but wait
+    // for the participant to explicitly press Continue before moving on
+    // (matches the requested flow — the original Tkinter app auto-advanced
+    // after 1.2s with no button; this adds the explicit confirmation step).
+    const data = await window.Samjna.postJSON(SAVE_URL, { records });
+    savedOk = !!data;
+    nextStepUrl = data && data.next_url ? data.next_url : null;
+
+    const btn = document.getElementById('gaze-continue-btn');
+    btn.style.display = 'inline-block';
+    if (!savedOk) {
+      window.Samjna.warn("Eye calibration save failed — Continue will retry.");
+    }
+  }
+
+  let nextStepUrl = null;
+
+  async function continueNext() {
+    const btn = document.getElementById('gaze-continue-btn');
+    btn.disabled = true;
+    btn.textContent = "Loading…";
+
+    if (!nextStepUrl) {
+      // Save didn't complete yet or failed — retry once before continuing.
+      const data = await window.Samjna.postJSON(SAVE_URL, { records });
+      nextStepUrl = data && data.next_url ? data.next_url : null;
+    }
+
+    if (nextStepUrl) {
+      await window.Samjna.goTo(nextStepUrl);
+    } else {
+      btn.disabled = false;
+      btn.textContent = "Continue →";
+      window.Samjna.warn("Could not proceed — eye calibration save failed twice.");
+    }
+  }
+
+  window.__gazeStep = { continueNext };
+
+  window.addEventListener('resize', resize);
+  resize();
+})();
+</script>

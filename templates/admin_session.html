@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Session {{ sess.id }} – Admin{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('admin') }}" style="color:var(--gold); font-size:.9rem;">← Back to Dashboard</a>
+
+<h1 class="page-title" style="margin-top:20px;">Session #{{ sess.id }}</h1>
+
+<div class="card">
+  <div class="card-title">Participant Info</div>
+  <table>
+    <tr><th>Name</th><td>{{ sess.participant_name }}</td></tr>
+    <tr><th>Language</th><td>{{ sess.language }}</td></tr>
+    <tr><th>Started</th><td>{{ sess.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td></tr>
+    {% if pss %}
+    <tr><th>PSS Score</th><td><strong style="color:var(--green)">{{ pss.score }}</strong> – {{ pss.interpretation }}</td></tr>
+    <tr><th>PSS Answers</th><td>{{ pss.answers }}</td></tr>
+    {% endif %}
+  </table>
+</div>
+
+{% if gaze %}
+<div class="card">
+  <div class="card-title">Eye Calibration ({{ gaze | length }} dots)</div>
+  <table>
+    <thead>
+      <tr><th>Dot</th><th>Target X</th><th>Target Y</th><th>Click X</th><th>Click Y</th><th>Offset px</th><th>Time</th></tr>
+    </thead>
+    <tbody>
+      {% for g in gaze %}
+      <tr>
+        <td>{{ g.dot_index }}</td>
+        <td>{{ g.target_x_px }}</td>
+        <td>{{ g.target_y_px }}</td>
+        <td>{{ g.click_x_px }}</td>
+        <td>{{ g.click_y_px }}</td>
+        <td>{{ g.offset_px }}</td>
+        <td>{{ g.timestamp }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if events %}
+<div class="card">
+  <div class="card-title">Interview Events ({{ events | length }})</div>
+  <table>
+    <thead>
+      <tr><th>Phase</th><th>Q#</th><th>Global Q</th><th>Event</th><th>Detail</th><th>Time</th></tr>
+    </thead>
+    <tbody>
+      {% for ev in events %}
+      <tr>
+        <td>{{ ev.phase_id }}</td>
+        <td>{{ ev.q_index + 1 }}</td>
+        <td>{{ ev.global_q_no }}</td>
+        <td>{{ ev.event_type }}</td>
+        <td style="font-size:.8rem; color:var(--text-dim)">{{ ev.detail[:80] }}</td>
+        <td>{{ ev.recorded_at.strftime('%H:%M:%S') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-title">Full Session Log</div>
+  <pre style="color:var(--text-dim); font-size:.8rem; overflow-x:auto; white-space:pre-wrap;">{{ sess.events_json }}</pre>
+</div>
+{% endblock %}

@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 400" width="320" height="400" role="img">
+  <title>Assessment avatar</title>
+  <desc>A friendly, generic illustrated avatar facing forward, looking directly at the camera, used to guide the participant's gaze during the interview.</desc>
+
+  <rect x="0" y="0" width="320" height="400" fill="#0A0A0A"/>
+
+  <path d="M 160 252
+           Q 90 252 80 320
+           Q 75 360 90 400
+           L 230 400
+           Q 245 360 240 320
+           Q 230 252 160 252 Z" fill="#3C6E8F"/>
+  <path d="M 160 252 Q 90 252 80 320 Q 76 348 84 374
+           L 110 360 Q 108 320 130 290 Z" fill="#2E5670"/>
+  <path d="M 160 252 Q 230 252 240 320 Q 244 348 236 374
+           L 210 360 Q 212 320 190 290 Z" fill="#2E5670"/>
+
+  <ellipse cx="160" cy="160" rx="78" ry="92" fill="#E8C39E"/>
+
+  <path d="M 84 145
+           Q 80 60 160 50
+           Q 240 60 236 145
+           Q 236 110 215 90
+           Q 195 70 160 70
+           Q 125 70 105 90
+           Q 84 110 84 145 Z" fill="#3A2A22"/>
+  <path d="M 80 150 Q 78 80 160 62 Q 242 80 240 150
+           Q 244 110 230 85 Q 200 52 160 52
+           Q 120 52 90 85 Q 76 110 80 150 Z" fill="#3A2A22"/>
+
+  <ellipse cx="124" cy="158" rx="15" ry="9.5" fill="#FFFFFF"/>
+  <ellipse cx="196" cy="158" rx="15" ry="9.5" fill="#FFFFFF"/>
+  <circle cx="124" cy="158" r="6.2" fill="#4A3324"/>
+  <circle cx="196" cy="158" r="6.2" fill="#4A3324"/>
+  <circle cx="126" cy="156" r="2" fill="#FFFFFF"/>
+  <circle cx="198" cy="156" r="2" fill="#FFFFFF"/>
+
+  <path d="M 108 144 Q 124 137 140 144" fill="none" stroke="#3A2A22" stroke-width="3" stroke-linecap="round"/>
+  <path d="M 180 144 Q 196 137 212 144" fill="none" stroke="#3A2A22" stroke-width="3" stroke-linecap="round"/>
+
+  <path d="M 156 168 Q 162 188 154 195 Q 159 199 166 195" fill="none" stroke="#C99B72" stroke-width="2" stroke-linecap="round"/>
+
+  <path d="M 134 212 Q 160 226 186 212" fill="none" stroke="#9A5B4A" stroke-width="3.5" stroke-linecap="round"/>
+
+  <rect x="98" y="108" width="124" height="50" rx="6" fill="none" stroke="#1FB6A6" stroke-width="2.5"/>
+  <text x="160" y="98" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1FB6A6">Look here</text>
+</svg>

@@ -1,0 +1,198 @@
+<h1 class="page-title">{{ labels.pss_title }}</h1>
+<p class="page-subtitle">
+  The questions below ask about your feelings and thoughts during the last month.<br>
+  Choose the option that best describes how often you have felt each way.
+</p>
+
+<div id="pss-cam-status-row" style="text-align:center; margin-bottom:18px;">
+  <span id="pss-cam-indicator" style="display:none; color:var(--text-dim); font-size:.8rem;">
+    📷 Camera active (not recording during this section)
+  </span>
+</div>
+
+<div id="pss-form">
+  {% for q in questions %}
+  {% set q_index = loop.index0 %}
+  <div class="pss-question">
+    <div class="pss-q-text"><strong>Q{{ loop.index }}.</strong> &nbsp;{{ q }}</div>
+    <div class="pss-options-native">
+      {% for opt in options %}
+      <label class="pss-opt-native">
+        <input type="radio" name="pss-q{{ q_index }}" data-qindex="{{ q_index }}" value="{{ loop.index0 }}">
+        <span class="pss-opt-native-text">{{ opt }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="btn-row" style="margin-top:32px;">
+    <button type="button" id="pss-submit-btn" class="btn btn-primary" onclick="window.__pssStep && window.__pssStep.submit()">
+      {{ labels.pss_submit }}
+    </button>
+  </div>
+</div>
+
+<!-- "Incomplete" warning popup — matches messagebox.showwarning in the original -->
+<div id="pss-warning-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <div class="modal-title">⚠ Incomplete</div>
+    <p id="pss-warning-text" style="color:var(--text-bright); margin:14px 0 20px;"></p>
+    <div class="btn-row">
+      <button class="btn btn-primary btn-sm" onclick="document.getElementById('pss-warning-overlay').style.display='none';">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- PSS Result popup — matches the original's Toplevel result_win exactly -->
+<div id="pss-result-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="text-align:center;">
+    <div class="modal-title">PSS Result</div>
+    <p style="color:var(--gold); font-size:1.1rem; font-weight:700; margin-top:18px;">Your PSS-10 Score</p>
+    <div id="pss-result-score" style="font-size:3.2rem; font-weight:800; color:#50DDAA; line-height:1; margin:8px 0;"></div>
+    <p id="pss-result-interp" style="color:var(--text-dim); font-size:.95rem; margin-bottom:20px;"></p>
+    <div class="btn-row">
+      <button class="btn btn-primary btn-sm" id="pss-finish-btn" onclick="window.__pssStep && window.__pssStep.finish()">
+        Finish Session
+      </button>
+    </div>
+  </div>
+</div>
+
+<style>
+  /* Native-style radio layout: visible circular radio + label, left-to-right row,
+     matching the original tk.Radiobutton layout exactly (no pill/button styling). */
+  .pss-options-native {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    margin-top: 4px;
+  }
+  .pss-opt-native {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    color: #AACCEE;
+    font-size: .92rem;
+  }
+  .pss-opt-native input[type="radio"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #C8A951;
+    cursor: pointer;
+    margin: 0;
+  }
+  .pss-opt-native input[type="radio"]:checked + .pss-opt-native-text {
+    color: #C8A951;
+    font-weight: 700;
+  }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  .modal-box {
+    background: #0D1B2A;
+    border: 1px solid #1C5070;
+    border-radius: 8px;
+    padding: 28px 32px;
+    max-width: 420px;
+    width: 90%;
+  }
+  .modal-title {
+    color: #C8A951;
+    font-size: 1.2rem;
+    font-weight: 700;
+  }
+</style>
+
+<script>
+(function () {
+  // PSS phase does not RECORD video/audio — matches the original Tkinter
+  // PSSTestScreen comment "No video recording during this phase." — but the
+  // camera/mic device itself stays open in the background for the whole
+  // session (released only at Thank You), exactly like the Tkinter
+  // CameraManager singleton. We surface that status here explicitly.
+  const stream = window.Samjna.getStream();
+  const indicator = document.getElementById("pss-cam-indicator");
+  if (stream && window.Samjna.isStreamHealthy()) {
+    window.Samjna.log("PSS test: camera/mic still active in background (no recording this phase).");
+    indicator.style.display = "inline-block";
+  } else {
+    window.Samjna.warn("PSS test: no active camera stream detected.");
+    indicator.textContent = "📷 Camera not active";
+    indicator.style.color = "#E0A040";
+    indicator.style.display = "inline-block";
+  }
+
+  const TOTAL = {{ questions | length }};
+  const SUBMIT_URL = "{{ url_for('pss_test') }}";
+  let pendingRedirect = null;
+
+  function showWarning(msg) {
+    document.getElementById("pss-warning-text").textContent = msg;
+    document.getElementById("pss-warning-overlay").style.display = "flex";
+  }
+
+  function interpret(score) {
+    if (score <= 13) return "Low perceived stress  (score 0–13)";
+    if (score <= 26) return "Moderate perceived stress  (score 14–26)";
+    return "High perceived stress  (score 27–40)";
+  }
+
+  async function submit() {
+    const answers = {};
+    const missing = [];
+    for (let i = 0; i < TOTAL; i++) {
+      const checked = document.querySelector(`input[name="pss-q${i}"]:checked`);
+      if (!checked) missing.push(i + 1);
+      else answers[i] = parseInt(checked.value, 10);
+    }
+
+    if (missing.length) {
+      // Matches messagebox.showwarning("Incomplete", "Please answer question(s): ...")
+      showWarning("Please answer question(s): " + missing.join(", "));
+      return;
+    }
+
+    const btn = document.getElementById("pss-submit-btn");
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+
+    try {
+      const data = await window.Samjna.postJSON(SUBMIT_URL, { answers });
+      if (data.status === "ok") {
+        pendingRedirect = data.redirect;
+        // Show the result popup first — matches the original's Toplevel
+        // result window with "Finish Session" button before navigating on.
+        document.getElementById("pss-result-score").textContent = data.score;
+        document.getElementById("pss-result-interp").textContent = data.interpretation || interpret(data.score);
+        document.getElementById("pss-result-overlay").style.display = "flex";
+      } else {
+        showWarning(data.message || "Something went wrong saving your responses.");
+        btn.disabled = false;
+        btn.textContent = "{{ labels.pss_submit }}";
+      }
+    } catch(e) {
+      window.Samjna.warn("PSS submit failed:", e);
+      showWarning("Network error — please try again.");
+      btn.disabled = false;
+      btn.textContent = "{{ labels.pss_submit }}";
+    }
+  }
+
+  async function finish() {
+    if (pendingRedirect) {
+      await window.Samjna.goTo(pendingRedirect);
+    }
+  }
+
+  window.__pssStep = { submit, finish };
+})();
+</script>
