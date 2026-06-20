@@ -3,6 +3,11 @@
 # Identical folder/file output to the Tkinter version.
 # Browser records video (webm) + audio (wav) via MediaRecorder API.
 # Files land on disk under Output/<Name>_<ts>/ with the same sub-folder tree.
+# Cloudinary is used as a backup only — local files are always retained.
+#
+# Cloudinary folder structure mirrors local Output/ tree:
+#   samjna/<participant>_<timestamp>/<phase>/Q1        (video)
+#   samjna/<participant>_<timestamp>/<phase>/Q1_audio  (wav)
 # =============================================================================
 
 import os, json, random, logging
@@ -18,7 +23,7 @@ from utils.questions import (get_questions, get_pss_options,
 from utils.output_manager import OutputManager
 from utils.media_convert import convert_to_mp4, convert_to_wav, ffmpeg_available
 
-# ── [ADDED] Cloudinary imports ────────────────────────────────────────────────
+# ── Cloudinary imports ────────────────────────────────────────────────────────
 import cloudinary
 import cloudinary.uploader
 
@@ -29,11 +34,11 @@ logger = logging.getLogger("samjna")
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "samjna-dev-secret-change-in-prod")
 
-# ── [ADDED] Cloudinary configuration (env vars) ───────────────────────────────
-# Set these three environment variables before running the app:
-#   CLOUDINARY_CLOUD_NAME  – your Cloudinary cloud name
-#   CLOUDINARY_API_KEY     – your Cloudinary API key
-#   CLOUDINARY_API_SECRET  – your Cloudinary API secret
+# ── Cloudinary configuration ──────────────────────────────────────────────────
+# Required environment variables:
+#   CLOUDINARY_CLOUD_NAME
+#   CLOUDINARY_API_KEY
+#   CLOUDINARY_API_SECRET
 _cld_cloud  = os.environ.get("CLOUDINARY_CLOUD_NAME")
 _cld_key    = os.environ.get("CLOUDINARY_API_KEY")
 _cld_secret = os.environ.get("CLOUDINARY_API_SECRET")
@@ -43,14 +48,14 @@ if _cld_cloud and _cld_key and _cld_secret:
         cloud_name = _cld_cloud,
         api_key    = _cld_key,
         api_secret = _cld_secret,
-        secure     = True,          # always use https URLs
+        secure     = True,
     )
     logger.info("Cloudinary configured for cloud: %s", _cld_cloud)
 else:
     logger.warning(
         "Cloudinary env vars not fully set "
         "(CLOUDINARY_CLOUD_NAME / CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET). "
-        "Uploads will be skipped; local files will be kept."
+        "Cloudinary backup will be skipped; local files will be kept as usual."
     )
 
 _CLOUDINARY_READY = bool(_cld_cloud and _cld_key and _cld_secret)
@@ -73,31 +78,42 @@ with app.app_context():
     db.create_all()
 
 # =============================================================================
-# [ADDED] Cloudinary upload helper
+# Cloudinary backup helper
 # =============================================================================
 
-def upload_to_cloudinary(local_path: str, resource_type: str = "auto",
-                          folder: str = "samjna") -> "str | None":
+def upload_to_cloudinary(local_path: str,
+                          resource_type: str = "auto",
+                          folder: str = "samjna",
+                          public_id_override: str = None) -> "str | None":
     """
-    Upload *local_path* to Cloudinary and return the secure URL.
+    Upload local_path to Cloudinary as a backup and return the secure URL.
+    The local file is NEVER deleted — this is a backup copy only.
+
+    Cloudinary folder structure mirrors the local Output/ tree:
+        samjna/<participant>_<ts>/baseline/Q1          (video .mp4)
+        samjna/<participant>_<ts>/baseline/Q1_audio    (raw   .wav)
+        samjna/<participant>_<ts>/social_stress/Q1
+        ... etc.
 
     Parameters
     ----------
-    local_path    : absolute path of the file to upload
-    resource_type : "video" for .mp4, "raw" for .wav / other audio
-                    (Cloudinary treats audio as "video" for .mp4 but "raw"
-                    for WAV; pass "auto" to let the SDK decide, or be
-                    explicit to avoid mis-classification)
-    folder        : Cloudinary folder/prefix for organisation
+    local_path         : absolute path of the already-saved local file
+    resource_type      : "video" for .mp4 | "raw" for .wav
+    folder             : full Cloudinary folder path including phase subfolder
+                         e.g. "samjna/John_20260620_143022/baseline"
+    public_id_override : when set, used instead of the filename stem;
+                         used to append "_audio" to WAV files so they never
+                         collide with the MP4 of the same question number.
 
     Returns
     -------
     str  – secure_url on success
-    None – on any failure (caller decides what to do)
+    None – on any failure (caller logs and continues normally)
     """
     if not _CLOUDINARY_READY:
-        logger.warning("upload_to_cloudinary: Cloudinary not configured — skipping upload of %s",
-                       local_path)
+        logger.warning(
+            "upload_to_cloudinary: Cloudinary not configured — skipping backup of %s",
+            local_path)
         return None
 
     if not os.path.isfile(local_path):
@@ -105,7 +121,9 @@ def upload_to_cloudinary(local_path: str, resource_type: str = "auto",
         return None
 
     try:
-        public_id = os.path.splitext(os.path.basename(local_path))[0]
+        public_id = (public_id_override
+                     or os.path.splitext(os.path.basename(local_path))[0])
+
         result = cloudinary.uploader.upload(
             local_path,
             resource_type = resource_type,
@@ -116,17 +134,18 @@ def upload_to_cloudinary(local_path: str, resource_type: str = "auto",
         )
         secure_url = result.get("secure_url")
         if secure_url:
-            logger.info("Cloudinary upload SUCCESS: %s → %s", local_path, secure_url)
+            logger.info("Cloudinary backup SUCCESS: %s → %s", local_path, secure_url)
             return secure_url
         else:
-            logger.error("Cloudinary upload returned no URL for %s; result=%s",
-                         local_path, result)
+            logger.error(
+                "Cloudinary backup returned no URL for %s; result=%s",
+                local_path, result)
             return None
 
-    except Exception as exc:   # never crash the caller
-        logger.error("Cloudinary upload FAILED for %s: %s", local_path, exc, exc_info=True)
+    except Exception as exc:
+        logger.error("Cloudinary backup FAILED for %s: %s",
+                     local_path, exc, exc_info=True)
         return None
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -135,7 +154,8 @@ def cur_sess() -> "DBSession | None":
     return db.session.get(DBSession, sid) if sid else None
 
 def is_fragment_request() -> bool:
-    """True when the SPA shell's JS is fetching a step as an HTML fragment."""
+    """True when the SPA shell's JS is fetching a step as an HTML fragment
+    (no <html>/<head>/camera re-init needed — the shell already has those)."""
     return request.headers.get("X-Requested-With") == "XMLHttpRequest" or \
            request.args.get("fragment") == "1"
 
@@ -249,7 +269,8 @@ def consent():
         session["ss_indices"]  = random.sample(range(len(social_qs)), min(3, len(social_qs)))
         session["cog_indices"] = random.sample(range(len(cog_qs)),    min(3, len(cog_qs)))
         session.permanent = True
-        logger.info("Consent given: participant=%s lang=%s session_id=%s", name, lang, dbs.id)
+        logger.info("Consent given: participant=%s lang=%s session_id=%s",
+                    name, lang, dbs.id)
         return redirect(url_for("assessment"))
 
     lang = request.args.get("lang","english")
@@ -258,7 +279,10 @@ def consent():
                            labels=get_ui_labels(lang))
 
 # =============================================================================
-# ASSESSMENT SHELL
+# ASSESSMENT SHELL  (single persistent page — camera/mic acquired ONCE here
+# and never re-initialized for the rest of the session, matching the
+# Tkinter app's CameraManager singleton which opens the camera once at
+# startup and keeps it alive until the session ends.)
 # =============================================================================
 
 @app.route("/assessment")
@@ -281,11 +305,14 @@ def face_calibration():
         om.log_event("session","FACE_CALIBRATION_DONE")
         om.save_session_log()
         save_om(om)
-        logger.info("Face calibration complete for session_id=%s", session.get("session_id"))
+        logger.info("Face calibration complete for session_id=%s",
+                    session.get("session_id"))
         return jsonify({"status": "ok", "next_url": url_for("eye_calibration")})
 
-    tpl = "fragments/face_calibration_fragment.html" if is_fragment_request() else "face_calibration.html"
-    return render_template(tpl, labels=get_ui_labels(session.get("language","english")))
+    tpl = ("fragments/face_calibration_fragment.html"
+           if is_fragment_request() else "face_calibration.html")
+    return render_template(tpl,
+                           labels=get_ui_labels(session.get("language","english")))
 
 # =============================================================================
 # SCREEN 3 – EYE CALIBRATION
@@ -294,8 +321,10 @@ def face_calibration():
 @app.route("/eye-calibration")
 @require_session
 def eye_calibration():
-    tpl = "fragments/eye_calibration_fragment.html" if is_fragment_request() else "eye_calibration.html"
-    return render_template(tpl, labels=get_ui_labels(session.get("language","english")))
+    tpl = ("fragments/eye_calibration_fragment.html"
+           if is_fragment_request() else "eye_calibration.html")
+    return render_template(tpl,
+                           labels=get_ui_labels(session.get("language","english")))
 
 @app.route("/eye-calibration/save", methods=["POST"])
 @require_session
@@ -320,11 +349,13 @@ def eye_calibration_save():
     om.save_session_log()
     save_om(om)
     db.session.commit()
-    logger.info("Eye calibration saved: %d gaze records for session_id=%s", len(records), dbs.id)
-    return jsonify({"status":"ok", "next_url": url_for("interview", phase_id="baseline", q_idx=0)})
+    logger.info("Eye calibration saved: %d gaze records for session_id=%s",
+                len(records), dbs.id)
+    return jsonify({"status":"ok",
+                    "next_url": url_for("interview", phase_id="baseline", q_idx=0)})
 
 # =============================================================================
-# SCREEN 4 – INTERVIEW
+# SCREEN 4 – INTERVIEW  (one route per question, MediaRecorder in browser)
 # =============================================================================
 
 @app.route("/interview/<phase_id>/<int:q_idx>")
@@ -357,11 +388,11 @@ def interview(phase_id, q_idx):
             target = url_for("pss_test")
         return jsonify({"redirect": target}) if fragment else redirect(target)
 
-    q_text      = questions[q_idx]
-    global_q_no = PHASE_Q_OFFSET[phase_id] + q_idx + 1
+    q_text       = questions[q_idx]
+    global_q_no  = PHASE_Q_OFFSET[phase_id] + q_idx + 1
     global_q_lbl = f"Q{q_idx+1}"
-    colors      = PHASE_COLORS[phase_id]
-    phase_label = PHASE_LABELS[phase_id].get(lang, PHASE_LABELS[phase_id]["english"])
+    colors       = PHASE_COLORS[phase_id]
+    phase_label  = PHASE_LABELS[phase_id].get(lang, PHASE_LABELS[phase_id]["english"])
 
     if q_idx == 0:
         om = get_om()
@@ -383,24 +414,23 @@ def interview(phase_id, q_idx):
         upload_audio_url=url_for("upload_audio", phase_id=phase_id, q_idx=q_idx),
         log_url=url_for("interview_log", phase_id=phase_id, q_idx=q_idx),
         next_step_url=url_for("interview", phase_id=phase_id, q_idx=q_idx+1),
-        prep_key = "prepare_cog" if phase_id == "cognitive_stress" else "prepare_social",
+        prep_key     = "prepare_cog" if phase_id == "cognitive_stress" else "prepare_social",
         is_cognitive = (phase_id == "cognitive_stress"),
     )
 
 # ── File upload routes ────────────────────────────────────────────────────────
-# [MODIFIED] upload_video – adds Cloudinary upload after successful local save
 
 @app.route("/upload/video/<phase_id>/<int:q_idx>", methods=["POST"])
 @require_session
 def upload_video(phase_id, q_idx):
-    om         = get_om()
-    local_lbl  = f"Q{q_idx+1}"
-    save_path  = om.video_path(phase_id, local_lbl, ext="mp4")
-    data       = request.data
+    om        = get_om()
+    local_lbl = f"Q{q_idx+1}"
+    save_path = om.video_path(phase_id, local_lbl, ext="mp4")
+    data      = request.data
     logger.info("Video upload received: phase=%s q=%d size=%d bytes → target %s",
-               phase_id, q_idx+1, len(data) if data else 0, save_path)
+                phase_id, q_idx+1, len(data) if data else 0, save_path)
 
-    # ── Step 1: existing local conversion (unchanged) ──────────────────────
+    # ── Step 1: local conversion — unchanged, always runs first ───────────
     ok = False
     if data:
         ok = convert_to_mp4(data, save_path)
@@ -411,41 +441,44 @@ def upload_video(phase_id, q_idx):
         logger.error("Video local save FAILED: phase=%s q=%d target=%s",
                      phase_id, q_idx+1, save_path)
 
-    # ── Step 2: [ADDED] Cloudinary upload ─────────────────────────────────
+    # ── Step 2: Cloudinary backup — local file is NEVER deleted ───────────
+    # Cloudinary folder mirrors local structure:
+    #   samjna / John_20260620_143022 / baseline
     cloudinary_url = None
     if ok:
+        cld_folder = (f"samjna"
+                      f"/{om.participant_name}_{om.timestamp}"
+                      f"/{phase_id}")
         cloudinary_url = upload_to_cloudinary(
             save_path,
-            resource_type="video",                    # mp4 is a video resource
-            folder=f"samjna/{om.participant_name}",   # organise by participant
+            resource_type = "video",
+            folder        = cld_folder,
+            # public_id stays as Q1, Q2 … (no override needed for video)
         )
         if cloudinary_url:
-            # Delete local file only after confirmed cloud upload
-            try:
-                os.remove(save_path)
-                logger.info("Local video deleted after Cloudinary upload: %s", save_path)
-            except OSError as e:
-                logger.warning("Could not delete local video %s: %s", save_path, e)
+            logger.info(
+                "Video backed up to Cloudinary; local file retained: %s", save_path)
         else:
-            # Upload failed — keep local file, log warning, do not crash
-            logger.warning("Cloudinary video upload failed; local file retained: %s", save_path)
+            logger.warning(
+                "Cloudinary video backup failed; local file retained: %s", save_path)
 
-    # ── Step 3: log event ─────────────────────────────────────────────────
+    # ── Step 3: log both local path and Cloudinary URL ────────────────────
     om2 = get_om()
     if cloudinary_url:
-        om2.log_event(phase_id, f"Q{q_idx+1}_VIDEO_SAVED", cloudinary_url)
+        om2.log_event(phase_id, f"Q{q_idx+1}_VIDEO_SAVED",
+                      f"{save_path} | cloudinary={cloudinary_url}")
     else:
-        om2.log_event(phase_id, f"Q{q_idx+1}_VIDEO_{'SAVED' if ok else 'FAILED'}", save_path)
+        om2.log_event(phase_id,
+                      f"Q{q_idx+1}_VIDEO_{'SAVED' if ok else 'FAILED'}",
+                      save_path)
     om2.save_session_log(); save_om(om2)
 
     return jsonify({
-        "status":        "ok" if ok else "error",
-        "file":          os.path.basename(save_path),
-        "cloudinary_url": cloudinary_url,   # None if not uploaded / not configured
+        "status":         "ok" if ok else "error",
+        "file":           os.path.basename(save_path),
+        "cloudinary_url": cloudinary_url,
     })
 
-
-# [MODIFIED] upload_audio – adds Cloudinary upload after successful local save
 
 @app.route("/upload/audio/<phase_id>/<int:q_idx>", methods=["POST"])
 @require_session
@@ -456,10 +489,11 @@ def upload_audio(phase_id, q_idx):
     data         = request.data
     content_type = request.content_type or ""
     src_ext      = "wav" if "wav" in content_type else "webm"
-    logger.info("Audio upload received: phase=%s q=%d size=%d bytes content_type=%s → target %s",
-               phase_id, q_idx+1, len(data) if data else 0, content_type, save_path)
+    logger.info(
+        "Audio upload received: phase=%s q=%d size=%d bytes content_type=%s → target %s",
+        phase_id, q_idx+1, len(data) if data else 0, content_type, save_path)
 
-    # ── Step 1: existing local conversion (unchanged) ──────────────────────
+    # ── Step 1: local conversion — unchanged, always runs first ───────────
     ok = False
     if data:
         ok = convert_to_wav(data, src_ext, save_path)
@@ -470,34 +504,43 @@ def upload_audio(phase_id, q_idx):
         logger.error("Audio local save FAILED: phase=%s q=%d target=%s",
                      phase_id, q_idx+1, save_path)
 
-    # ── Step 2: [ADDED] Cloudinary upload ─────────────────────────────────
+    # ── Step 2: Cloudinary backup — local file is NEVER deleted ───────────
+    # WAV public_id gets "_audio" suffix → Q1_audio, Q2_audio …
+    # This prevents collision with the Q1.mp4 video in the same folder.
     cloudinary_url = None
     if ok:
+        cld_folder = (f"samjna"
+                      f"/{om.participant_name}_{om.timestamp}"
+                      f"/{phase_id}")
+        audio_public_id = (os.path.splitext(os.path.basename(save_path))[0]
+                           + "_audio")
         cloudinary_url = upload_to_cloudinary(
             save_path,
-            resource_type="raw",                      # WAV must be "raw" on Cloudinary
-            folder=f"samjna/{om.participant_name}",
+            resource_type      = "raw",       # WAV must be "raw" on Cloudinary
+            folder             = cld_folder,
+            public_id_override = audio_public_id,
         )
         if cloudinary_url:
-            try:
-                os.remove(save_path)
-                logger.info("Local audio deleted after Cloudinary upload: %s", save_path)
-            except OSError as e:
-                logger.warning("Could not delete local audio %s: %s", save_path, e)
+            logger.info(
+                "Audio backed up to Cloudinary; local file retained: %s", save_path)
         else:
-            logger.warning("Cloudinary audio upload failed; local file retained: %s", save_path)
+            logger.warning(
+                "Cloudinary audio backup failed; local file retained: %s", save_path)
 
-    # ── Step 3: log event ─────────────────────────────────────────────────
+    # ── Step 3: log both local path and Cloudinary URL ────────────────────
     om2 = get_om()
     if cloudinary_url:
-        om2.log_event(phase_id, f"Q{q_idx+1}_AUDIO_SAVED", cloudinary_url)
+        om2.log_event(phase_id, f"Q{q_idx+1}_AUDIO_SAVED",
+                      f"{save_path} | cloudinary={cloudinary_url}")
     else:
-        om2.log_event(phase_id, f"Q{q_idx+1}_AUDIO_{'SAVED' if ok else 'FAILED'}", save_path)
+        om2.log_event(phase_id,
+                      f"Q{q_idx+1}_AUDIO_{'SAVED' if ok else 'FAILED'}",
+                      save_path)
     om2.save_session_log(); save_om(om2)
 
     return jsonify({
-        "status":        "ok" if ok else "error",
-        "file":          os.path.basename(save_path),
+        "status":         "ok" if ok else "error",
+        "file":           os.path.basename(save_path),
         "cloudinary_url": cloudinary_url,
     })
 
@@ -530,14 +573,14 @@ def interview_log(phase_id, q_idx):
 @app.route("/pss", methods=["GET","POST"])
 @require_session
 def pss_test():
-    lang   = session.get("language","english")
-    labels = get_ui_labels(lang)
+    lang     = session.get("language","english")
+    labels   = get_ui_labels(lang)
     fragment = is_fragment_request()
 
     if request.method == "POST":
         questions = get_questions("pss", lang)
         if request.is_json:
-            payload = request.get_json(force=True)
+            payload    = request.get_json(force=True)
             answers_in = payload.get("answers", {})
             def _get(i): return answers_in.get(str(i), answers_in.get(i))
         else:
@@ -573,7 +616,8 @@ def pss_test():
                                  answers_json=json.dumps(raw),
                                  score=total, interpretation=interp))
         db.session.commit()
-        logger.info("PSS complete: session_id=%s score=%d (%s)", dbs.id, total, interp)
+        logger.info("PSS complete: session_id=%s score=%d (%s)",
+                    dbs.id, total, interp)
 
         session["pss_score"]          = total
         session["pss_interpretation"] = interp
@@ -581,7 +625,7 @@ def pss_test():
 
         if request.is_json:
             return jsonify({"status":"ok", "redirect": url_for("thank_you"),
-                           "score": total, "interpretation": interp})
+                            "score": total, "interpretation": interp})
         return redirect(url_for("thank_you"))
 
     tpl = "fragments/pss_test_fragment.html" if fragment else "pss_test.html"
@@ -597,13 +641,13 @@ def pss_test():
 @app.route("/thank-you")
 @require_session
 def thank_you():
-    lang   = session.get("language","english")
-    labels = get_ui_labels(lang)
-    score  = session.get("pss_score","—")
-    interp = session.get("pss_interpretation","")
-    odir   = session.get("output_dir","")
-    dbs    = cur_sess()
-    name   = dbs.participant_name if dbs else ""
+    lang     = session.get("language","english")
+    labels   = get_ui_labels(lang)
+    score    = session.get("pss_score","—")
+    interp   = session.get("pss_interpretation","")
+    odir     = session.get("output_dir","")
+    dbs      = cur_sess()
+    name     = dbs.participant_name if dbs else ""
     fragment = is_fragment_request()
     session.clear()
     tpl = "fragments/thank_you_fragment.html" if fragment else "thank_you.html"
@@ -630,6 +674,9 @@ def admin_session(session_id):
                            sess=dbs, gaze=gaze, events=events, pss=pss)
 
 # =============================================================================
+# DOWNLOAD ALL DATA
+# =============================================================================
+
 @app.route('/download-all-data')
 def download_all_data():
     output_folder = os.path.join(BASE_DIR, "Output")
@@ -641,7 +688,7 @@ def download_all_data():
         for root, dirs, files in os.walk(output_folder):
             for file in files:
                 filepath = os.path.join(root, file)
-                arcname = os.path.relpath(filepath, output_folder)
+                arcname  = os.path.relpath(filepath, output_folder)
                 zipf.write(filepath, arcname)
 
     return send_file(
@@ -649,6 +696,8 @@ def download_all_data():
         as_attachment=True,
         download_name="samjna_output.zip"
     )
+
+# =============================================================================
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
